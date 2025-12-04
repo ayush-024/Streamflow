@@ -1,0 +1,57 @@
+name: Build Android App
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          channel: 'stable'
+      
+      - name: Scaffold Android Project
+        # This magic command creates the missing android/ folder
+        # while respecting your existing lib/ and pubspec.yaml
+        run: flutter create . --project-name streamflow_android --org com.streamflow
+
+      - name: Inject Permissions
+        run: |
+          # The player needs INTERNET permissions which are not default.
+          # We inject them into the AndroidManifest using sed.
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          
+          # Inject INTERNET permission
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"/>' $MANIFEST
+          
+          # Update Min SDK to 19 (required for webview) in build.gradle
+          GRADLE="android/app/build.gradle"
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 19/' $GRADLE
+          # Fallback regex in case variable name differs
+          sed -i 's/minSdkVersion [0-9]*/minSdkVersion 19/' $GRADLE
+          
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamFlow-App
+          path: build/app/outputs/flutter-apk/app-release.apk
